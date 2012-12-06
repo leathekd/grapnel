@@ -10,7 +10,7 @@ your needs. Further, grapnel will build the query string, request data
 See the inline docs for more information.
 
 ** Installation
-*** Via Marmalade (recommended)
+*** Via Marmalade
 Coming soon.  I'm still testing it out, but it has proven pretty
 reliable so far.
 
