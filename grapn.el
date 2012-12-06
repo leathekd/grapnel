@@ -113,8 +113,7 @@
 (defun grapnel-response-headers ()
   "Extract the headers from the response buffer"
   (goto-char (point-min))
-  (while (re-search-forward "
-" nil t)
+  (while (re-search-forward "[\r]" nil t)
     (replace-match "" nil nil))
   (goto-char (point-min))
   (let ((pos (search-forward-regexp "^$" nil t)))
