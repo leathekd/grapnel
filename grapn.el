@@ -1,4 +1,4 @@
-;;; grapnel --- HTTP request lib built on curl with flexible callback dispatch
+;;; grapnel.el --- HTTP request lib built on curl with flexible callback dispatch
 
 ;; Copyright (C) 2012  David Leatherman
 
@@ -113,7 +113,8 @@
 (defun grapnel-response-headers ()
   "Extract the headers from the response buffer"
   (goto-char (point-min))
-  (while (re-search-forward "" nil t)
+  (while (re-search-forward "
+" nil t)
     (replace-match "" nil nil))
   (goto-char (point-min))
   (let ((pos (search-forward-regexp "^$" nil t)))
