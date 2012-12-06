@@ -49,8 +49,8 @@
   "Path to the curl executable")
 
 (defvar grapnel-options ""
-  "Additional options to pass to all curl requests.  Enter them just as they would
-  be entered on the command line.")
+  "Additional options to pass to all curl requests.  Enter them just as they
+  would be entered on the command line.")
 
 (defvar grapnel-callback-dispatch-fn 'grapnel-callback-dispatch
   "Dispatch function for handling the curl response.")
