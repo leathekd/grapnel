@@ -77,24 +77,30 @@
                             request-method url-params
                             request-data request-headers)
   "Converts the passed arguments into the curl command"
-  (let ((method (or request-method "GET"))
-        (url (if (null url-params)
-                 url
-               (concat url
-                       (if (string-match-p "\?" url) "&" "?")
-                       (grapnel-format-params url-params))))
-        (headers (if (null request-headers)
-                     ""
-                   (mapconcat
-                    (lambda (header-pair)
-                      (format "-H '%s: %s'"
-                              (car header-pair) (cdr header-pair)))
-                    request-headers
-                    " ")))
-        (data (if (null request-data)
-                  ""
-                (format "-d \"%s\""
-                        (grapnel-format-params request-data)))))
+  (let* ((method (or request-method "GET"))
+         (url (if (null url-params)
+                  url
+                (concat url
+                        (if (string-match-p "\?" url) "&" "?")
+                        (grapnel-format-params url-params))))
+         (data-body (when request-data (grapnel-format-params request-data)))
+         (data (if (null request-data)
+                   ""
+                 (format "-d \"%s\"" data-body)))
+         (headers (if (and (equal "POST" request-method)
+                           (null (cdr (assoc "Content-Length"
+                                             request-headers))))
+                      (cons `("Content-Length" . ,(length data-body))
+                            request-headers)
+                    request-headers))
+         (headers (if (null headers)
+                      ""
+                    (mapconcat
+                     (lambda (header-pair)
+                       (format "-H '%s: %s'"
+                               (car header-pair) (cdr header-pair)))
+                     headers
+                     " "))))
     (format "%s %s %s -i -s -X %s %s '%s' "
             grapnel-program grapnel-options headers method data url)))
 
