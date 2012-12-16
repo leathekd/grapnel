@@ -146,7 +146,7 @@
      ;; curl error
      ((not (= 0 exit-code))
       (apply (cdr (assoc 'error handler-alist))
-             (list response)))
+             (list response exit-code)))
 
      ;; response code
      ((assoc response-code handler-alist)
