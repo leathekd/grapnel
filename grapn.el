@@ -118,15 +118,16 @@
 
 (defun grapnel-response-headers ()
   "Extract the headers from the response buffer"
-  (goto-char (point-min))
-  (while (re-search-forward "[\r]" nil t)
-    (replace-match "" nil nil))
-  (goto-char (point-min))
-  (let ((pos (search-forward-regexp "^$" nil t)))
-    (when pos
-      (let ((headers (buffer-substring (point-min) pos)))
-        (delete-region (point-min) (1+ pos))
-        headers))))
+  (unless (= (point-min) (point-max))
+    (goto-char (point-min))
+    (while (re-search-forward "[\r]" nil t)
+      (replace-match "" nil nil))
+    (goto-char (point-min))
+    (let ((pos (search-forward-regexp "^$" nil t)))
+      (when pos
+        (let ((headers (buffer-substring (point-min) pos)))
+          (delete-region (point-min) (1+ pos))
+          headers)))))
 
 (defun grapnel-callback-dispatch (handler-alist exit-code response headers)
   "Default dispatch function.  Call the first matching function in HANDLER-ALIST
