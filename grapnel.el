@@ -50,7 +50,7 @@
 
 (defvar grapnel-options ""
   "Additional options to pass to all curl requests.  Enter them just as they
-  would be entered on the command line.")
+would be entered on the command line.")
 
 (defvar grapnel-callback-dispatch-fn 'grapnel-callback-dispatch
   "Dispatch function for handling the curl response.")
@@ -192,12 +192,12 @@ rest of them are called with (response headers)"
                                  request-method url-params
                                  request-data request-headers)
   "Retrieve URL asynchronously and call the corresponding handler in
-  HANDLER-ALIST.  See the documentation for `grapnel-callback-dispatch' for
-  details on HANDLER-ALIST.  REQUEST-METHOD should be a string and can be any
-  valid HTTP verb.  URL-PARAMS should be an alist and will be formatted into a
-  query string and url encoded.  REQUEST-DATA should be an alist and will be
-  added to requests (most useful for POST and PUT). Finally, REQUEST-HEADERS is
-  also an alist of header name to value pairs."
+HANDLER-ALIST.  See the documentation for `grapnel-callback-dispatch' for
+details on HANDLER-ALIST.  REQUEST-METHOD should be a string and can be any
+valid HTTP verb.  URL-PARAMS should be an alist and will be formatted into a
+query string and url encoded.  REQUEST-DATA should be an alist and will be
+added to requests (most useful for POST and PUT). Finally, REQUEST-HEADERS is
+also an alist of header name to value pairs."
   (let* ((command (grapnel-command url request-method url-params
                                    request-data request-headers))
          (buffer-name (generate-new-buffer-name "grapnel"))
