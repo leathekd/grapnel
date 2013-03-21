@@ -131,16 +131,20 @@
 
 (defun grapnel-callback-dispatch (handler-alist exit-code response headers)
   "Default dispatch function.  Call the first matching function in HANDLER-ALIST
-  based on the response.  HANDLER-ALIST is in the form:
+based on the response.  HANDLER-ALIST is in the form:
 
-  '(('success . (lambda (response headers) ...)))
+'((success . (lambda (response headers) ...))
+  (error . (lambda (response error-code) ...)))
 
-  The valid keys in the alist are (in order of precedence):
-  - 'error - for when the curl call fails in some way
-  - the HTTP response code as a number
-  - 'success - any HTTP response 200-299
-  - 'failure - any HTTP response 400-599
-  - 'complete - any HTTP response"
+The valid keys in the alist are (in order of precedence):
+- 'error - for when the curl call fails in some way
+- the HTTP response code as a number
+- 'success - any HTTP response 200-299
+- 'failure - any HTTP response 400-599
+- 'complete - any HTTP response
+
+'error is the only one that is called with (response error-code) all of the
+rest of them are called with (response headers)"
   (let ((response-code (cadr (assoc "response-code" headers))))
     (cond
      ;; curl error
