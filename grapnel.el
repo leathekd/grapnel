@@ -1,10 +1,10 @@
-;;; grapnel.el --- HTTP request lib built on curl with flexible callback dispatch
+;;; grapnel.el --- HTTP request lib with flexible callback dispatch
 
-;; Copyright (C) 2012  David Leatherman
+;; Copyright © 2013  David Leatherman
 
 ;; Author: David Leatherman <leathekd@gmail.com>
-;; URL: http://www.github.com/leathekd/grapn.el
-;; Version: 1.0.0
+;; URL: http://www.github.com/leathekd/grapnel
+;; Version: 0.5.0
 
 ;; This file is not part of GNU Emacs.
 
@@ -18,14 +18,18 @@
 ;; string, request data (i.e., POST body), and headers from alists
 ;; that are passed in.
 
-;; An example handler alist:
-;; '((error . (lambda (resp) (error "curl failed: %s" resp)))
-;;   (failure . (lambda (resp hdrs) (error "req failed: %s %s" resp hdrs)))
-;;   (success . (lambda (resp hdrs) (message "r: %s h: %s" resp hdrs))))
+;; An example:
+;; (grapnel-retrieve-url
+;;  "www.google.com"
+;;  '((success . (lambda (res hdrs) (message "%s" res)))
+;;    (failure . (lambda (res hdrs) (message "Fail: %s" res)))
+;;    (error   . (lambda (res err)  (message "Err: %s" err))))
+;;  "GET"
+;;  '((q . "ASIN B001EN71CW")))
 
 ;; History
 
-;; 1.0.0 - Initial release.
+;; 0.5.0 - Initial release.
 
 ;;; License:
 
@@ -132,7 +136,7 @@ would be entered on the command line.")
   "Default dispatch function.  Call the first matching function in HANDLER-ALIST
 based on the response.  HANDLER-ALIST is in the form:
 
-'((success . (lambda (response headers) ...))
+'((success . (lambda (response response-headers) ...))
   (error . (lambda (response error-code) ...)))
 
 The valid keys in the alist are (in order of precedence):
@@ -242,4 +246,5 @@ REQUEST-HEADERS: an alist of header name to value pairs"
         ret))))
 
 (provide 'grapnel)
+
 ;;; grapnel ends here
