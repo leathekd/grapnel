@@ -83,14 +83,13 @@ would be entered on the command line.")
                 (concat url
                         (if (string-match-p "\?" url) "&" "?")
                         (grapnel-format-params url-params))))
-         (data-body (when request-data (grapnel-format-params request-data)))
          (data (if (null request-data)
                    ""
-                 (format "-d \"%s\"" data-body)))
+                 "-d @-"))
          (headers (if (and (equal "POST" request-method)
                            (null (cdr (assoc "Content-Length"
                                              request-headers))))
-                      (cons `("Content-Length" . ,(length data-body))
+                      (cons `("Content-Length" . ,(length request-data))
                             request-headers)
                     request-headers))
          (headers (if (null headers)
@@ -199,10 +198,21 @@ REQUEST-METHOD: a string and can be any valid HTTP verb
 URL-PARAMS: an alist and will be formatted into a query string and url encoded
 REQUEST-DATA: an alist, automatically formatted and urlencoded, sent over stdin
 REQUEST-HEADERS: an alist of header name to value pairs"
+  (let* ((data (when request-data
+                 (if (listp request-data)
+                     (grapnel-format-params request-data)
+                   request-data)))
+         (command (grapnel-command url request-method url-params data
+                                   request-headers))
+         (buffer-name (generate-new-buffer-name " grapnel"))
          (proc (start-process-shell-command
                 "grapnel" buffer-name command)))
     (set-process-sentinel proc (apply-partially 'grapnel-sentinel
                                                 handler-alist buffer-name))
+    (when request-data
+      (process-send-string proc data)
+      (process-send-string proc "\n")
+      (process-send-eof proc))
     nil))
 
 ;;;###autoload
@@ -210,11 +220,19 @@ REQUEST-HEADERS: an alist of header name to value pairs"
                                       request-method url-params
                                       request-data request-headers)
   "Behaves the same as `grapnel-retrieve-url' but synchronously."
-  (let* ((command (grapnel-command url request-method url-params
-                                   request-data request-headers))
-         (buffer-name (generate-new-buffer-name "grapnel"))
+  (let* ((data (when request-data
+                 (if (listp request-data)
+                     (grapnel-format-params request-data)
+                   request-data)))
+         (command (grapnel-command url request-method url-params
+                                   data request-headers))
+         (buffer-name (generate-new-buffer-name " grapnel"))
          (resp (shell-command-to-string command))
-         (exit-code (call-process-shell-command command nil buffer-name nil)))
+         (exit-code
+          (with-temp-buffer
+            (insert data)
+            (call-process-shell-command command (current-buffer) buffer-name
+                                        nil))))
     (with-current-buffer buffer-name
       (let* ((headers (grapnel-parse-headers (grapnel-response-headers)))
              (response (buffer-string))
