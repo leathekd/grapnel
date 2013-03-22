@@ -193,14 +193,12 @@ rest of them are called with (response headers)"
                                  request-data request-headers)
   "Retrieve URL asynchronously and call the corresponding handler in
 HANDLER-ALIST.  See the documentation for `grapnel-callback-dispatch' for
-details on HANDLER-ALIST.  REQUEST-METHOD should be a string and can be any
-valid HTTP verb.  URL-PARAMS should be an alist and will be formatted into a
-query string and url encoded.  REQUEST-DATA should be an alist and will be
-added to requests (most useful for POST and PUT). Finally, REQUEST-HEADERS is
-also an alist of header name to value pairs."
-  (let* ((command (grapnel-command url request-method url-params
-                                   request-data request-headers))
-         (buffer-name (generate-new-buffer-name "grapnel"))
+details on HANDLER-ALIST.
+
+REQUEST-METHOD: a string and can be any valid HTTP verb
+URL-PARAMS: an alist and will be formatted into a query string and url encoded
+REQUEST-DATA: an alist, automatically formatted and urlencoded, sent over stdin
+REQUEST-HEADERS: an alist of header name to value pairs"
          (proc (start-process-shell-command
                 "grapnel" buffer-name command)))
     (set-process-sentinel proc (apply-partially 'grapnel-sentinel
