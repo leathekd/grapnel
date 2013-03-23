@@ -175,7 +175,12 @@ rest of them are called with (response headers)"
      ;; complete (both success and failure)
      ((assoc 'complete handler-alist)
       (apply (cdr (assoc 'complete handler-alist))
-             (list response headers))))))
+             (list response headers)))
+
+     ;; warn if there was no handler
+     (t (message (concat "GRAPNEL WARNING: Missing handler for response. "
+                         "Curl exit code: %s, Response code: %s")
+                 exit-code response-code)))))
 
 (defun grapnel-sentinel (handler-alist buffer-name process signal)
   "Sentinel function that watches the curl process"
