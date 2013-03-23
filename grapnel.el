@@ -148,7 +148,8 @@ rest of them are called with (response headers)"
   (let ((response-code (cadr (assoc "response-code" headers))))
     (cond
      ;; curl error
-     ((not (= 0 exit-code))
+     ((and (assoc 'error handler-alist)
+           (not (= 0 exit-code)))
       (apply (cdr (assoc 'error handler-alist))
              (list response exit-code)))
 
