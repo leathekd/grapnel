@@ -229,18 +229,25 @@ REQUEST-HEADERS: an alist of header name to value pairs"
                                    data request-headers))
          (buffer-name (generate-new-buffer-name " grapnel"))
          (resp (shell-command-to-string command))
-         (exit-code
-          (with-temp-buffer
-            (insert data)
-            (call-process-shell-command command (current-buffer) buffer-name
-                                        nil))))
-    (with-current-buffer buffer-name
-      (let* ((headers (grapnel-parse-headers (grapnel-response-headers)))
-             (response (buffer-string))
-             (ret (funcall grapnel-callback-dispatch-fn
-                           handler-alist exit-code response headers)))
-        (kill-buffer buffer-name)
-        ret))))
+         (tmp-file (format "/tmp/grapnel%s.tmp" (random t))))
+    (unwind-protect
+        (progn
+          (with-temp-file tmp-file
+            (when data
+              (insert data)))
+          (let ((exit-code (call-process-shell-command command tmp-file
+                                                       buffer-name nil)))
+            (with-current-buffer buffer-name
+              (let* ((headers (grapnel-parse-headers
+                               (grapnel-response-headers)))
+                     (response (buffer-string))
+                     (ret (funcall grapnel-callback-dispatch-fn
+                                   handler-alist exit-code response headers)))
+                (kill-buffer buffer-name)
+                ret))))
+      (condition-case err
+          (delete-file tmp-file)
+          (error nil)))))
 
 (provide 'grapnel)
 
