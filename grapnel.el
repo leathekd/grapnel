@@ -86,7 +86,7 @@ would be entered on the command line.")
                         (grapnel-format-params url-params))))
          (data (if (null request-data)
                    ""
-                 "-d @-"))
+                 " -d @-"))
          (headers (if (and (equal "POST" request-method)
                            (null (cdr (assoc "Content-Length"
                                              request-headers))))
@@ -97,12 +97,15 @@ would be entered on the command line.")
                       ""
                     (mapconcat
                      (lambda (header-pair)
-                       (format "-H '%s: %s'"
+                       (format " -H '%s: %s'"
                                (car header-pair) (cdr header-pair)))
                      headers
-                     " "))))
-    (format "%s %s %s -i -s -X %s %s '%s' "
-            grapnel-program grapnel-options headers method data url)))
+                     "")))
+         (options (if (< 0 (length grapnel-options))
+                      (concat " " grapnel-options)
+                    "")))
+    (format "%s%s%s -i -s -X %s%s '%s'"
+            grapnel-program options headers method data url)))
 
 (defun grapnel-parse-headers (header-str)
   "Extracts the response code and converts the headers into an alist"
