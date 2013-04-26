@@ -62,7 +62,7 @@ would be entered on the command line.")
 (defun grapnel-url-escape (str)
   "URI encode STR"
   (url-hexify-string
-   (encode-coding-string str 'utf-8)))
+   (encode-coding-string (format "%s" str) 'utf-8)))
 
 (defun grapnel-format-params (params)
   "Convert an alist of params into an & delimeted string suitable for curl"
