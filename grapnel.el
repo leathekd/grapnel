@@ -86,7 +86,7 @@ would be entered on the command line.")
                         (grapnel-format-params url-params))))
          (data (if (null request-data)
                    ""
-                 " -d @-"))
+                 " --data @-"))
          (headers (if (and (equal "POST" request-method)
                            (null (cdr (assoc "Content-Length"
                                              request-headers))))
@@ -97,14 +97,14 @@ would be entered on the command line.")
                       ""
                     (mapconcat
                      (lambda (header-pair)
-                       (format " -H '%s: %s'"
+                       (format " --header '%s: %s'"
                                (car header-pair) (cdr header-pair)))
                      headers
                      "")))
          (options (if (< 0 (length grapnel-options))
                       (concat " " grapnel-options)
                     "")))
-    (format "%s%s%s -i -s -X %s%s '%s'"
+    (format "%s%s%s --include --silent --request %s%s '%s'"
             grapnel-program options headers method data url)))
 
 (defun grapnel-parse-headers (header-str)
