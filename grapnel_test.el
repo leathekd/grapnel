@@ -12,8 +12,8 @@
     (should (eql nil (sort needs-docs 'string<)))))
 
 (ert-deftest grapnel-test-url-escape ()
-  (should (equal "fire%20%3d%3f%2bfly"
-                 (grapnel-url-escape "fire =?+fly"))))
+  (should (equal (downcase "fire%20%3d%3f%2bfly")
+                 (downcase (grapnel-url-escape "fire =?+fly")))))
 (ert-deftest grapnel-test-format-params ()
   (should (equal "fire=fly&brown=coat"
                  (grapnel-format-params '(("fire" . "fly")
@@ -21,23 +21,27 @@
 
 (ert-deftest grapnel-test-command ()
   (let ((grapnel-program "curl"))
-    (should (equal "curl -i -s -X GET 'http://www.google.com'"
+    (should (equal (concat "curl --include --silent --request GET"
+                           " \"http://www.google.com\"")
                    (grapnel-command "http://www.google.com")))
-    (should (equal (concat "curl -H 'Content-Length: 0' -i -s"
-                           " -X POST 'http://www.google.com'")
+    (should (equal (concat "curl --header \"Content-Length: 0\" --include"
+                           " --silent --request POST \"http://www.google.com\"")
                    (grapnel-command "http://www.google.com" "POST")))
-    (should (equal (concat "curl -H 'Content-Length: 0' -i -s"
-                           " -X POST 'http://www.google.com?q=serenity'")
+    (should (equal (concat "curl --header \"Content-Length: 0\" --include"
+                           " --silent --request POST"
+                           " \"http://www.google.com?q=serenity\"")
                    (grapnel-command "http://www.google.com" "POST"
                                     '(("q" . "serenity")))))
-    (should (equal (concat "curl -H 'Content-Length: 1' -i -s"
-                           " -X POST -d @- 'http://www.google.com?q=serenity'")
+    (should (equal (concat "curl --header \"Content-Length: 1\" --include"
+                           " --silent --request POST --data @-"
+                           " \"http://www.google.com?q=serenity\"")
                    (grapnel-command "http://www.google.com" "POST"
                                     '(("q" . "serenity"))
                                     '(("doesn't" . "matter")))))
-    (should (equal (concat "curl -H 'Content-Length: 1'"
-                           " -H 'header: value' -i -s -X POST -d @-"
-                           " 'http://www.google.com?q=serenity'")
+    (should (equal (concat "curl --header \"Content-Length: 1\""
+                           " --header \"header: value\" --include --silent"
+                           " --request POST --data @-"
+                           " \"http://www.google.com?q=serenity\"")
                    (grapnel-command "http://www.google.com" "POST"
                                     '(("q" . "serenity"))
                                     '(("doesn't" . "matter"))

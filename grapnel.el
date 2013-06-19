@@ -97,14 +97,14 @@ would be entered on the command line.")
                       ""
                     (mapconcat
                      (lambda (header-pair)
-                       (format " --header '%s: %s'"
+                       (format " --header \"%s: %s\""
                                (car header-pair) (cdr header-pair)))
                      headers
                      "")))
          (options (if (< 0 (length grapnel-options))
                       (concat " " grapnel-options)
                     "")))
-    (format "%s%s%s --include --silent --request %s%s '%s'"
+    (format "%s%s%s --include --silent --request %s%s \"%s\""
             grapnel-program options headers method data url)))
 
 (defun grapnel-parse-headers (header-str)
@@ -237,7 +237,6 @@ REQUEST-HEADERS: an alist of header name to value pairs"
          (command (grapnel-command url request-method url-params
                                    data request-headers))
          (buffer-name (generate-new-buffer-name " grapnel"))
-         (resp (shell-command-to-string command))
          (tmp-file (format "/tmp/grapnel%s.tmp" (random t))))
     (unwind-protect
         (progn
@@ -256,7 +255,7 @@ REQUEST-HEADERS: an alist of header name to value pairs"
                 ret))))
       (condition-case err
           (delete-file tmp-file)
-          (error nil)))))
+        (error nil)))))
 
 (provide 'grapnel)
 
