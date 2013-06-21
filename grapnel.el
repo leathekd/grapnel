@@ -97,15 +97,19 @@ would be entered on the command line.")
                       ""
                     (mapconcat
                      (lambda (header-pair)
-                       (format " --header \"%s: %s\""
-                               (car header-pair) (cdr header-pair)))
+                       (format " --header %s"
+                               (shell-quote-argument
+                                (format "%s: %s"
+                                        (car header-pair)
+                                        (cdr header-pair)))))
                      headers
                      "")))
          (options (if (< 0 (length grapnel-options))
                       (concat " " grapnel-options)
                     "")))
-    (format "%s%s%s --include --silent --request %s%s \"%s\""
-            grapnel-program options headers method data url)))
+    (format "%s%s%s --include --silent --request %s%s %s"
+            grapnel-program options headers method data
+            (shell-quote-argument url))))
 
 (defun grapnel-parse-headers (header-str)
   "Extracts the response code and converts the headers into an alist"
