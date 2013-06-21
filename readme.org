@@ -1,4 +1,5 @@
-* grapnel - HTTP request for Emacs lib built on curl with flexible callback dispatch
+* grapnel
+A HTTP request lib for Emacs with flexible callback dispatch.
 
 grapnel is an HTTP request library that uses a curl subprocess and
 offers flexible callback dispatch. Not only can you pass in an alist
@@ -10,9 +11,22 @@ your needs. Further, grapnel will build the query string, request data
 See the inline docs for more information.
 
 ** Installation
-*** Via Marmalade
-Coming soon.  I'm still testing it out, but it has proven pretty
-reliable so far.
+*** Via Marmalade/Melpa
+#+BEGIN_EXAMPLE
+(require 'package)
+(add-to-list 'package-archives
+             '("marmalade" . "http://marmalade-repo.org/packages/") t)
+(add-to-list 'package-archives
+             '("melpa" . "http://melpa.milkbox.net/packages/") t)
+(package-initialize)
+#+END_EXAMPLE
+
+Then you can install it:
+
+#+BEGIN_EXAMPLE
+M-x package-refresh-contents
+M-x package-install RET grapnel RET
+#+END_EXAMPLE
 
 *** Manually (via git)
 Download the source or clone the repo and add the following 
@@ -42,5 +56,10 @@ to ~/.emacs.d/init.el:
 #+END_EXAMPLE
 
 ** License
-Source Copyright © 2012 David Leatherman. Distributed under the GNU
-General Public License version 3.
+Copyright © 2013 David Leatherman.
+
+Files are licensed under the same license as Emacs unless otherwise
+specified. See the file LICENSE for details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.

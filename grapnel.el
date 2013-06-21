@@ -4,7 +4,7 @@
 
 ;; Author: David Leatherman <leathekd@gmail.com>
 ;; URL: http://www.github.com/leathekd/grapnel
-;; Version: 0.5.1
+;; Version: 0.5.2
 
 ;; This file is not part of GNU Emacs.
 
@@ -30,6 +30,8 @@
 ;; History
 
 ;; 0.5.1 - Initial release.
+
+;; 0.5.2 - Fix some quoting issues on Windows
 
 ;;; License:
 
