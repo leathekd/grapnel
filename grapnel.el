@@ -87,7 +87,7 @@ would be entered on the command line.")
          (data (if (null request-data)
                    ""
                  " --data @-"))
-         (headers (if (and (equal "POST" request-method)
+         (headers (if (and (equal "POST" method)
                            (null (cdr (assoc "Content-Length"
                                              request-headers))))
                       (cons `("Content-Length" . ,(length request-data))
@@ -97,15 +97,19 @@ would be entered on the command line.")
                       ""
                     (mapconcat
                      (lambda (header-pair)
-                       (format " --header '%s: %s'"
-                               (car header-pair) (cdr header-pair)))
+                       (format " --header %s"
+                               (shell-quote-argument
+                                (format "%s: %s"
+                                        (car header-pair)
+                                        (cdr header-pair)))))
                      headers
                      "")))
          (options (if (< 0 (length grapnel-options))
                       (concat " " grapnel-options)
                     "")))
-    (format "%s%s%s --include --silent --request %s%s '%s'"
-            grapnel-program options headers method data url)))
+    (format "%s%s%s --include --silent --request %s%s %s"
+            grapnel-program options headers method data
+            (shell-quote-argument url))))
 
 (defun grapnel-parse-headers (header-str)
   "Extracts the response code and converts the headers into an alist"
@@ -237,7 +241,6 @@ REQUEST-HEADERS: an alist of header name to value pairs"
          (command (grapnel-command url request-method url-params
                                    data request-headers))
          (buffer-name (generate-new-buffer-name " grapnel"))
-         (resp (shell-command-to-string command))
          (tmp-file (format "/tmp/grapnel%s.tmp" (random t))))
     (unwind-protect
         (progn
@@ -256,7 +259,7 @@ REQUEST-HEADERS: an alist of header name to value pairs"
                 ret))))
       (condition-case err
           (delete-file tmp-file)
-          (error nil)))))
+        (error nil)))))
 
 (provide 'grapnel)
 

@@ -12,8 +12,8 @@
     (should (eql nil (sort needs-docs 'string<)))))
 
 (ert-deftest grapnel-test-url-escape ()
-  (should (equal "fire%20%3d%3f%2bfly"
-                 (grapnel-url-escape "fire =?+fly"))))
+  (should (equal (downcase "fire%20%3d%3f%2bfly")
+                 (downcase (grapnel-url-escape "fire =?+fly")))))
 (ert-deftest grapnel-test-format-params ()
   (should (equal "fire=fly&brown=coat"
                  (grapnel-format-params '(("fire" . "fly")
@@ -21,23 +21,27 @@
 
 (ert-deftest grapnel-test-command ()
   (let ((grapnel-program "curl"))
-    (should (equal "curl -i -s -X GET 'http://www.google.com'"
+    (should (equal (concat "curl --include --silent --request GET"
+                           " http\\://www.google.com")
                    (grapnel-command "http://www.google.com")))
-    (should (equal (concat "curl -H 'Content-Length: 0' -i -s"
-                           " -X POST 'http://www.google.com'")
+    (should (equal (concat "curl --header Content-Length\\:\\ 0 --include"
+                           " --silent --request POST http\\://www.google.com")
                    (grapnel-command "http://www.google.com" "POST")))
-    (should (equal (concat "curl -H 'Content-Length: 0' -i -s"
-                           " -X POST 'http://www.google.com?q=serenity'")
+    (should (equal (concat "curl --header Content-Length\\:\\ 0 --include"
+                           " --silent --request POST"
+                           " http\\://www.google.com\\?q\\=serenity")
                    (grapnel-command "http://www.google.com" "POST"
                                     '(("q" . "serenity")))))
-    (should (equal (concat "curl -H 'Content-Length: 1' -i -s"
-                           " -X POST -d @- 'http://www.google.com?q=serenity'")
+    (should (equal (concat "curl --header Content-Length\\:\\ 1 --include"
+                           " --silent --request POST --data @-"
+                           " http\\://www.google.com\\?q\\=serenity")
                    (grapnel-command "http://www.google.com" "POST"
                                     '(("q" . "serenity"))
                                     '(("doesn't" . "matter")))))
-    (should (equal (concat "curl -H 'Content-Length: 1'"
-                           " -H 'header: value' -i -s -X POST -d @-"
-                           " 'http://www.google.com?q=serenity'")
+    (should (equal (concat "curl --header Content-Length\\:\\ 1"
+                           " --header header\\:\\ value --include --silent"
+                           " --request POST --data @-"
+                           " http\\://www.google.com\\?q\\=serenity")
                    (grapnel-command "http://www.google.com" "POST"
                                     '(("q" . "serenity"))
                                     '(("doesn't" . "matter"))
@@ -102,22 +106,27 @@
 (defun grapnel-test-callback (filename resp headers)
   "Create the file that the test looks for"
   (with-temp-file filename
-    (insert "Grapnel test file")))
+    (insert resp)))
 
 (ert-deftest grapnel-test-retrieve-url-sync ()
-  (should (equal "success"
-                 (grapnel-retrieve-url-sync
-                  "www.google.com"
-                  '((complete . (lambda (resp hdrs) "success")))))))
+  (should
+   (equal "success"
+          (grapnel-retrieve-url-sync
+           "www.google.com"
+           '((success . (lambda (resp hdrs) "success"))
+             (failure . (lambda (&rest args) "failure")))))))
 
 (ert-deftest grapnel-test-retrieve-url ()
-  (let* ((tmp-file (format "/tmp/grapnel-test%s.tmp" (random t)))
+  (let* ((tmp-file (make-temp-file "grapnel_test" nil "tmp"))
          (tries 10))
     (unwind-protect
         (progn
           (grapnel-retrieve-url
            "www.google.com"
-           `((complete . ,(apply-partially 'grapnel-test-callback tmp-file))))
+           `((success . ,(apply-partially 'grapnel-test-callback tmp-file))
+             (failure . (lambda (&rest args)
+                          (should
+                           (error "The request should have succeeded"))))))
           ;; kinda gross and will possibly fail on slow connections. :/
           (while (and (not (file-exists-p tmp-file)) (< 0 tries))
             (setq tries (- tries 1))
@@ -126,3 +135,37 @@
       (condition-case err
           (delete-file tmp-file)
         (error nil)))))
+
+(ert-deftest grapnel-test-headers ()
+  (let ((opera-mini-resp
+         (grapnel-retrieve-url-sync
+          "www.google.com"
+          `((success . (lambda (resp hdrs) resp))
+            (failure . (lambda (&rest args) (error "The request failed"))))
+          "GET"
+          nil
+          nil
+          '(("Accept" . (mapconcat 'identity
+                                   '("application/vnd.wap.wmlc"
+                                     "application/vnd.wap.wmlscriptc"
+                                     "image/vnd.wap.wbmp"
+                                     "application/vnd.wap.wtls-ca-certificate"
+                                     "image/gif"
+                                     "text/plain")
+                                   ", "))
+            ;; this is here just for the embedded quotes
+            ("If-None-Match" "\"abc123\"")
+            ("User-Agent" . "Nokia8310/1.0 (04.53)"))))
+        (firefox-response
+         (grapnel-retrieve-url-sync
+          "www.google.com"
+          `((success . (lambda (resp hdrs) resp))
+            (failure . (lambda (&rest args) (error "The request failed"))))
+          "GET"
+          nil
+          nil
+          '(("User-Agent" . (concat "User-Agent: Mozilla/5.0"
+                                    " (X11; Linux x86_64; rv:12.0)"
+                                    " Gecko/20100101 Firefox/21.0"))))))
+    (should (string-match "WAPFORUM//DTD" opera-mini-resp))
+    (should (> (length firefox-response) (length opera-mini-resp)))))
