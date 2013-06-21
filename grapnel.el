@@ -87,7 +87,7 @@ would be entered on the command line.")
          (data (if (null request-data)
                    ""
                  " --data @-"))
-         (headers (if (and (equal "POST" request-method)
+         (headers (if (and (equal "POST" method)
                            (null (cdr (assoc "Content-Length"
                                              request-headers))))
                       (cons `("Content-Length" . ,(length request-data))
