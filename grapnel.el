@@ -216,23 +216,25 @@ curl command.  This is added to the request alist in REQ-ALIST"
 (defun grapnel-add-raw-response-headers (req-alist)
   "Extract the headers from the response buffer and add i to the
 response alist in REQ-ALIST"
-  (a-put-in req-alist '(response raw-headers)
-            (when (< (point-min) (point-max))
-              (goto-char (point-min))
-              (while (re-search-forward "[\r]" nil t)
-                (replace-match "" nil nil))
-              (goto-char (point-min))
-              (let ((pos (search-forward-regexp "^$" nil t)))
-                (when pos
-                  (prog1
-                      (buffer-substring (point-min) pos)
-                    (delete-region (point-min) (1+ pos))))))))
+  (with-current-buffer (a-get-in req-alist '(request buffer))
+    (a-put-in req-alist '(response raw-headers)
+              (when (< (point-min) (point-max))
+                (goto-char (point-min))
+                (while (re-search-forward "[\r]" nil t)
+                  (replace-match "" nil nil))
+                (goto-char (point-min))
+                (let ((pos (search-forward-regexp "^$" nil t)))
+                  (when pos
+                    (prog1
+                        (buffer-substring-no-properties (point-min) pos)
+                      (delete-region (point-min) (1+ pos)))))))))
 
 (defun grapnel-add-response-body (req-alist)
   "Extract the response body from the output buffer and add it to the
 response alist in REQ-ALIST"
-  (a-put-in req-alist '(response body) (buffer-substring-no-properties
-                                        (point-min) (point-max))))
+  (with-current-buffer (a-get-in req-alist '(request buffer))
+    (a-put-in req-alist '(response body) (buffer-substring-no-properties
+                                          (point-min) (point-max)))))
 
 (defun grapnel-add-response-code (req-alist)
   "Extract the HTTP response code from the output buffer and add it to
@@ -335,17 +337,18 @@ rest of them are called with (response headers)"
 
 (defun grapnel-process-response (req-alist exit-code)
   "Parses the response and invokes the callback dispatch function."
-  (let ((request-buffer (a-get-in req-alist '(request buffer))))
-    (funcall grapnel-callback-dispatch-fn
-             (prog1
-                 (with-current-buffer request-buffer
-                   (-reduce-from (lambda (resp-alist fn)
-                                   (funcall fn resp-alist))
-                                 (a-put-in req-alist
-                                           '(response process-exit-code)
-                                           exit-code)
-                                 (a-get req-alist 'response-middleware)))
-               (kill-buffer request-buffer)))))
+  (unwind-protect
+      (funcall grapnel-callback-dispatch-fn
+               (-reduce-from (lambda (resp-alist fn)
+                               (funcall fn resp-alist))
+                             (a-put-in req-alist
+                                       '(response process-exit-code)
+                                       exit-code)
+                             (a-get req-alist 'response-middleware)))
+    ;; kill the buffer, but don't make a fuss if there's a problem
+    (condition-case _
+        (kill-buffer (a-get-in req-alist '(request buffer)))
+      (error nil))))
 
 (defun grapnel-sentinel (req-alist process signal)
   "Sentinel function that watches the async curl process"
