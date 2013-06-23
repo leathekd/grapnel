@@ -194,8 +194,7 @@ REQ-ALIST.  Should be called after basically everything else:
                              (a-get-in req-alist '(request params))
                              (a-get-in req-alist '(request data))
                              (a-get-in req-alist '(request headers))
-                             ;; TODO- options
-                             (a-get-in req-alist '(request options)))))
+                             (a-get req-alist 'curl-options))))
 
 (defun grapnel-add-request-buffer (req-alist)
   "Creates a name for the buffer that will gather the output of the
@@ -345,7 +344,7 @@ rest of them are called with (response headers)"
                                  (a-put-in req-alist
                                            '(response process-exit-code)
                                            exit-code)
-                                 grapnel-default-response-middleware))
+                                 (a-get req-alist 'response-middleware)))
                (kill-buffer request-buffer)))))
 
 (defun grapnel-sentinel (req-alist process signal)
@@ -372,7 +371,7 @@ proper documentation."
   (let* ((request-alist (-reduce-from (lambda (alist fn)
                                         (funcall fn alist))
                                       req-alist
-                                      grapnel-default-request-middleware))
+                                      (a-get req-alist 'request-middleware)))
          (command (a-get-in request-alist '(request command)))
          (request-buffer (a-get-in request-alist '(request buffer)))
          (proc (start-process-shell-command "grapnel" request-buffer command))
@@ -398,30 +397,58 @@ proper documentation."
            (mapconcat 'prin1-to-string args "\n")))
 
 (defvar grapnel-default-request-alist
-  '((url . "")
+  `((url . "")
     (sync . nil)
     (handlers . ((complete . grapnel-default-handler)
                  (error . grapnel-default-handler)))
     (method . "GET")
     (params . nil)
     (data . nil)
-    (headers . nil))
+    (headers . nil)
+    (curl-options . nil)
+    (request-middleware . ,grapnel-default-request-middleware)
+    (response-middleware . ,grapnel-default-response-middleware))
   "The request alist with some simple default values.")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ ;; Client functions
+
+;;;###autoload
+(defun grapnel-get (url opts-alist)
+  "Simple HTTP GET call.  OPTS-ALIST can contain any of the keys found
+in `grapnel-default-request-alist' to override those defaults."
+  (grapnel-request
+   (a-merge grapnel-default-request-alist
+            opts-alist
+            `((url . ,url)
+              (method . "GET")))))
+
+;;;###autoload
+(defun grapnel-post (url opts-alist)
+  "Simple HTTP POST call.  OPTS-ALIST can contain any of the keys found
+in `grapnel-default-request-alist' to override those defaults."
+  (grapnel-request
+   (a-merge grapnel-default-request-alist
+            opts-alist
+            `((url . ,url)
+              (method . "POST")))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ ;; Old request format left here for compatibility
 
 (defun grapnel-make-request-alist (url handler-alist sync request-method
                                        url-params request-data request-headers)
   "Transitional utility function that wraps the grapnel-retrieve-url*
 function arguments in an alist. "
-  `((url . ,url)
-    (sync . ,sync)
-    (handlers . ,handler-alist)
-    (method . ,request-method)
-    (params . ,url-params)
-    (data . ,request-data)
-    (headers . ,request-headers)))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
- ;; Client functions
+  (a-merge
+   grapnel-default-request-alist
+   `((url . ,url)
+     (sync . ,sync)
+     (handlers . ,handler-alist)
+     (method . ,request-method)
+     (params . ,url-params)
+     (data . ,request-data)
+     (headers . ,request-headers))))
 
 ;;;###autoload
 (defun grapnel-retrieve-url (url handler-alist &optional
@@ -450,26 +477,6 @@ underlying curl process to finish."
   (grapnel-request (grapnel-make-request-alist url handler-alist t
                                                request-method url-params
                                                request-data request-headers)))
-
-;;;###autoload
-(defun grapnel-get (url opts-alist)
-  "Simple HTTP GET call.  OPTS-ALIST can contain any of the keys found
-in `grapnel-default-request-alist' to override those defaults."
-  (grapnel-request
-   (a-merge grapnel-default-request-alist
-            opts-alist
-            `((url . ,url)
-              (method . "GET")))))
-
-;;;###autoload
-(defun grapnel-post (url opts-alist)
-  "Simple HTTP POST call.  OPTS-ALIST can contain any of the keys found
-in `grapnel-default-request-alist' to override those defaults."
-  (grapnel-request
-   (a-merge grapnel-default-request-alist
-            opts-alist
-            `((url . ,url)
-              (method . "POST")))))
 
 (provide 'grapnel)
 
