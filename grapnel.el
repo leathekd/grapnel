@@ -408,7 +408,7 @@ proper documentation."
     (params . nil)
     (data . nil)
     (headers . nil)
-    (curl-options . nil)
+    (curl-options . ,grapnel-options)
     (request-middleware . ,grapnel-default-request-middleware)
     (response-middleware . ,grapnel-default-response-middleware))
   "The request alist with some simple default values.")
