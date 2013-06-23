@@ -61,6 +61,34 @@ would be entered on the command line.")
 (defvar grapnel-callback-dispatch-fn 'grapnel-callback-dispatch
   "Dispatch function for handling the curl response.")
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ ;; Debug related functions
+
+(defvar grapnel-debug-buffer "*grapnel-debug-log*"
+  "The buffer into which to log grapnel related debug log messages")
+
+(defvar grapnel-debug-p nil
+  "Boolean that determines if grapnel should output debug info into
+the `grapnel-debug-buffer'")
+
+(defun grapnel-log (&rest args)
+  "Converts arguments into strings and inserts them, space delimited,
+into `grapnel-debug-buffer' only if `grapnel-debug-p' is truthy."
+  (when grapnel-debug-p
+    (with-current-buffer (get-buffer-create grapnel-debug-buffer)
+      (goto-char (point-max))
+      (insert (mapconcat 'prin1-to-string args " ") "\n"))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ ;; Request oriented middleware
+
+(defun grapnel-add-request-method (req-alist)
+  "Adds the HTTP method to an alist under the request key inside
+REQ-ALIST.  Returns the combined alist."
+  (let ((method (a-get req-alist 'method)))
+    (a-put-in req-alist '(request method)
+              (or method "GET"))))
+
 (defun grapnel-url-escape (str)
   "URI encode STR"
   (url-hexify-string
@@ -76,25 +104,61 @@ would be entered on the command line.")
       (t (grapnel-url-escape p))))
    params "&"))
 
+(defun grapnel-add-request-params (req-alist)
+  "Formats the given url params from the 'params key in REQ-ALIST and
+adds the result to an alist under the request key inside REQ-ALIST.
+Returns the combined alist."
+  (let ((params (a-get req-alist 'params)))
+    (a-put-in req-alist '(request params)
+              (when params
+                (grapnel-format-params params)))))
+
+(defun grapnel-add-request-url (req-alist)
+  "Combines the url in REQ-ALIST with the params in the request
+sub-alist into the actual url that will be used in the curl request.
+Adds this new url into the requests sub-alist.
+
+Should be called after `grapnel-add-request-params'."
+  (let ((params (a-get-in req-alist '(request params))))
+    (a-put-in req-alist '(request url)
+              (cond ((null params) url)
+                    ((string-match-p "\?" url) (format "%s&%s" url params))
+                    (t (format "%s?%s" url params))))))
+
+(defun grapnel-add-request-data (req-alist)
+  "Formats the given request data from the 'data key in REQ-ALIST and
+adds the result to an alist under the request key inside REQ-ALIST.
+Returns the combined alist."
+  (let ((data (a-get req-alist 'data)))
+    (a-put-in req-alist '(request data)
+              (when data
+                (if (listp data)
+                    (grapnel-format-params data)
+                  data)))))
+
+(defun grapnel-add-request-headers (req-alist)
+  "Formats the given request headers from the 'headers key in
+REQ-ALIST and adds the result to an alist under the request key inside
+REQ-ALIST.  Returns the combined alist.
+
+If called after `grapnel-add-request-data' and no 'Content-Length'
+header is found, a 'Content-Length' header will be added."
+  (let ((data (a-get-in req-alist '(request data)))
+        (headers (a-get req-alist 'headers)))
+    (a-put-in req-alist '(request headers)
+              (if (and (null (a-get headers "Content-Length"))
+                       (null (a-get headers "content-length")))
+                  (a-put headers "Content-Length" (length data))
+                headers))))
+
 (defun grapnel-command (url &optional
-                            request-method url-params
-                            request-data request-headers)
+                            method params
+                            data headers
+                            options)
   "Converts the passed arguments into the curl command"
-  (let* ((method (or request-method "GET"))
-         (url (if (null url-params)
-                  url
-                (concat url
-                        (if (string-match-p "\?" url) "&" "?")
-                        (grapnel-format-params url-params))))
-         (data (if (null request-data)
-                   ""
-                 " --data @-"))
-         (headers (if (and (equal "POST" method)
-                           (null (cdr (assoc "Content-Length"
-                                             request-headers))))
-                      (cons `("Content-Length" . ,(length request-data))
-                            request-headers)
-                    request-headers))
+  (let* ((data (if data
+                   " --data @-"
+                 ""))
          (headers (if (null headers)
                       ""
                     (mapconcat
@@ -106,39 +170,106 @@ would be entered on the command line.")
                                         (cdr header-pair)))))
                      headers
                      "")))
-         (options (if (< 0 (length grapnel-options))
-                      (concat " " grapnel-options)
-                    "")))
-    (format "%s%s%s --include --silent --request %s%s %s"
+         (options (if options
+                      (concat " " options)
+                    ""))
+         (method (if method
+                     (format " --request %s" method)
+                   "")))
+    (format "%s%s%s --include --silent%s%s %s"
             grapnel-program options headers method data
             (shell-quote-argument url))))
 
-(defun grapnel-parse-headers (header-str)
-  "Extracts the response code and converts the headers into an alist"
-  (when header-str
-    (let ((split-headers (split-string header-str "\n" t)))
-      (cons
-       (list "response-code"
-             (progn (string-match "\\([[:digit:]][[:digit:]][[:digit:]]\\)"
-                                  (car split-headers))
-                    (string-to-number (match-string 1 (car split-headers)))))
-       (mapcar (lambda (line) (split-string line ": "))
-               (cdr split-headers))))))
+(defun grapnel-add-request-command (req-alist)
+  "Formats and adds the curl command to the request alist in
+REQ-ALIST.  Should be called after basically everything else:
+`grapnel-add-request-url'
+`grapnel-add-request-method'
+`grapnel-add-request-params'
+`grapnel-add-request-data'
+`grapnel-add-request-headers'"
+  (a-put-in req-alist '(request command)
+            (grapnel-command (a-get-in req-alist '(request url))
+                             (a-get-in req-alist '(request method))
+                             (a-get-in req-alist '(request params))
+                             (a-get-in req-alist '(request data))
+                             (a-get-in req-alist '(request headers))
+                             ;; TODO- options
+                             (a-get-in req-alist '(request options)))))
 
-(defun grapnel-response-headers ()
-  "Extract the headers from the response buffer"
-  (unless (= (point-min) (point-max))
-    (goto-char (point-min))
-    (while (re-search-forward "[\r]" nil t)
-      (replace-match "" nil nil))
-    (goto-char (point-min))
-    (let ((pos (search-forward-regexp "^$" nil t)))
-      (when pos
-        (let ((headers (buffer-substring (point-min) pos)))
-          (delete-region (point-min) (1+ pos))
-          headers)))))
+(defun grapnel-add-request-buffer (req-alist)
+  "Creates a name for the buffer that will gather the output of the
+curl command.  This is added to the request alist in REQ-ALIST"
+  (a-put-in req-alist '(request buffer) (generate-new-buffer-name " grapnel")))
 
-(defun grapnel-callback-dispatch (handler-alist exit-code response headers)
+(defvar grapnel-default-request-middleware
+  '(grapnel-add-request-buffer
+    grapnel-add-request-method
+    grapnel-add-request-params
+    grapnel-add-request-url
+    grapnel-add-request-data
+    grapnel-add-request-headers
+    grapnel-add-request-command))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ ;; Response oriented middleware
+
+(defun grapnel-add-raw-response-headers (req-alist)
+  "Extract the headers from the response buffer and add i to the
+response alist in REQ-ALIST"
+  (a-put-in req-alist '(response raw-headers)
+            (when (< (point-min) (point-max))
+              (goto-char (point-min))
+              (while (re-search-forward "[\r]" nil t)
+                (replace-match "" nil nil))
+              (goto-char (point-min))
+              (let ((pos (search-forward-regexp "^$" nil t)))
+                (when pos
+                  (prog1
+                      (buffer-substring (point-min) pos)
+                    (delete-region (point-min) (1+ pos))))))))
+
+(defun grapnel-add-response-body (req-alist)
+  "Extract the response body from the output buffer and add it to the
+response alist in REQ-ALIST"
+  (a-put-in req-alist '(response body) (buffer-substring-no-properties
+                                        (point-min) (point-max))))
+
+(defun grapnel-add-response-code (req-alist)
+  "Extract the HTTP response code from the output buffer and add it to
+the response alist in REQ-ALIST.  Should be called after
+`grapnel-add-raw-response-headers'"
+  (save-match-data
+    (let* ((raw-headers (a-get-in req-alist '(response raw-headers) ""))
+           (split-headers (split-string raw-headers "\n" t))
+           (response-code-line (car split-headers)))
+      (a-put-in req-alist '(response code)
+                (when (< 0 (length raw-headers))
+                  (string-match "\\([[:digit:]][[:digit:]][[:digit:]]\\)"
+                                response-code-line)
+                  (string-to-number (match-string 1 response-code-line)))))))
+
+(defun grapnel-add-response-headers (req-alist)
+  "Parses the raw headers in the response alist and adds them to the
+response alist in REQ-ALIST.  Should be called after
+`grapnel-add-raw-response-headers'"
+  (let* ((raw-headers (a-get-in req-alist '(response raw-headers) ""))
+         (split-headers (cdr (split-string raw-headers "\n" t))))
+    (a-put-in req-alist '(response headers)
+              (when (< 0 (length split-headers))
+                (mapcar (lambda (line) (split-string line ": "))
+                        split-headers)))))
+
+(defvar grapnel-default-response-middleware
+  '(grapnel-add-raw-response-headers
+    grapnel-add-response-code
+    grapnel-add-response-headers
+    grapnel-add-response-body))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ ;; Core request/response functions
+
+(defun grapnel-callback-dispatch (req-alist)
   "Default dispatch function.  Call the first matching function in HANDLER-ALIST
 based on the response.  HANDLER-ALIST is in the form:
 
@@ -154,16 +285,25 @@ The valid keys in the alist are (in order of precedence):
 
 'error is the only one that is called with (response error-code) all of the
 rest of them are called with (response headers)"
-  (let ((response-code (cadr (assoc "response-code" headers))))
+  (grapnel-log "grapnel-callback-dispatch" req-alist)
+  (let ((handler-alist (a-get req-alist 'handlers))
+        (response-code (a-get-in req-alist '(response code)))
+        (response (a-get-in req-alist '(response body)))
+        (headers (a-get-in req-alist '(response headers)))
+        (exit-code (a-get-in req-alist '(response process-exit-code))))
+    (grapnel-log "grapnel-callback-dispatch" handler-alist response-code
+                 exit-code)
     (cond
      ;; curl error
      ((and (assoc 'error handler-alist)
            (not (= 0 exit-code)))
+      (grapnel-log "grapnel-callback-dispatch" "dispatch to error")
       (apply (cdr (assoc 'error handler-alist))
              (list response exit-code)))
 
      ;; response code
      ((assoc response-code handler-alist)
+      (grapnel-log "grapnel-callback-dispatch" "dispatch to" response-code)
       (apply (cdr (assoc response-code handler-alist))
              (list response headers)))
 
@@ -171,6 +311,7 @@ rest of them are called with (response headers)"
      ((and (assoc 'success handler-alist)
            (<= 200 response-code)
            (< response-code 300))
+      (grapnel-log "grapnel-callback-dispatch" "dispatch to success")
       (apply (cdr (assoc 'success handler-alist))
              (list response headers)))
 
@@ -178,11 +319,13 @@ rest of them are called with (response headers)"
      ((and (assoc 'failure handler-alist)
            (<= 400 response-code)
            (< response-code 600))
+      (grapnel-log "grapnel-callback-dispatch" "dispatch to failure")
       (apply (cdr (assoc 'failure handler-alist))
              (list response headers)))
 
      ;; complete (both success and failure)
      ((assoc 'complete handler-alist)
+      (grapnel-log "grapnel-callback-dispatch" "dispatch to complete")
       (apply (cdr (assoc 'complete handler-alist))
              (list response headers)))
 
@@ -191,16 +334,94 @@ rest of them are called with (response headers)"
                          "Curl exit code: %s, Response code: %s")
                  exit-code response-code)))))
 
-(defun grapnel-sentinel (handler-alist buffer-name process signal)
-  "Sentinel function that watches the curl process"
+(defun grapnel-process-response (req-alist exit-code)
+  "Parses the response and invokes the callback dispatch function."
+  (let ((request-buffer (a-get-in req-alist '(request buffer))))
+    (funcall grapnel-callback-dispatch-fn
+             (prog1
+                 (with-current-buffer request-buffer
+                   (-reduce-from (lambda (resp-alist fn)
+                                   (funcall fn resp-alist))
+                                 (a-put-in req-alist
+                                           '(response process-exit-code)
+                                           exit-code)
+                                 grapnel-default-response-middleware))
+               (kill-buffer request-buffer)))))
+
+(defun grapnel-sentinel (req-alist process signal)
+  "Sentinel function that watches the async curl process"
   (when (or (string-match "^finished" signal)
             (string-match "^exited abnormally" signal))
-    (with-current-buffer buffer-name
-      (let ((headers (grapnel-parse-headers (grapnel-response-headers)))
-            (response (buffer-string)))
-        (funcall grapnel-callback-dispatch-fn
-                 handler-alist (process-exit-status process) response headers))
-      (kill-buffer buffer-name))))
+    (grapnel-process-response req-alist (process-exit-status process))))
+
+(defun grapnel-wait-for-process (proc)
+  "Busy waits until PROC has finished effectively making it a sync
+process."
+  (while (and (processp proc)
+              (process-live-p proc))
+    (grapnel-log "grapnel-wait-for-process" (processp proc)
+                 (process-live-p proc)
+                 (process-status proc)
+                 (process-command proc))
+    (sit-for 0.25)))
+
+(defun grapnel-request (req-alist)
+  "Internal base request function.  See `grapnel-retrieve-url' for
+proper documentation."
+  (grapnel-log "grapnel-request" req-alist)
+  (let* ((request-alist (-reduce-from (lambda (alist fn)
+                                        (funcall fn alist))
+                                      req-alist
+                                      grapnel-default-request-middleware))
+         (command (a-get-in request-alist '(request command)))
+         (request-buffer (a-get-in request-alist '(request buffer)))
+         (proc (start-process-shell-command "grapnel" request-buffer command))
+         (data (a-get-in request-alist '(request data)))
+         (handler-alist (a-get request-alist 'handlers)))
+    (grapnel-log "request-alist" request-alist)
+    (when data
+      (process-send-string proc data)
+      (process-send-string proc "\n")
+      (process-send-eof proc))
+    (if (a-get request-alist 'sync)
+        (progn
+          (grapnel-wait-for-process proc)
+          (grapnel-process-response request-alist (process-exit-status proc)))
+      (progn
+        (set-process-sentinel proc (apply-partially 'grapnel-sentinel
+                                                    request-alist))
+        nil))))
+
+(defun grapnel-default-handler (&rest args)
+  "Default response handler that simply echos the responses via `message'"
+  (message "Default grapnel handler output: %s"
+           (mapconcat 'prin1-to-string args "\n")))
+
+(defvar grapnel-default-request-alist
+  '((url . "")
+    (sync . nil)
+    (handlers . ((complete . grapnel-default-handler)
+                 (error . grapnel-default-handler)))
+    (method . "GET")
+    (params . nil)
+    (data . nil)
+    (headers . nil))
+  "The request alist with some simple default values.")
+
+(defun grapnel-make-request-alist (url handler-alist sync request-method
+                                       url-params request-data request-headers)
+  "Transitional utility function that wraps the grapnel-retrieve-url*
+function arguments in an alist. "
+  `((url . ,url)
+    (sync . ,sync)
+    (handlers . ,handler-alist)
+    (method . ,request-method)
+    (params . ,url-params)
+    (data . ,request-data)
+    (headers . ,request-headers)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ ;; Client functions
 
 ;;;###autoload
 (defun grapnel-retrieve-url (url handler-alist &optional
@@ -214,54 +435,41 @@ REQUEST-METHOD: a string and can be any valid HTTP verb
 URL-PARAMS: an alist and will be formatted into a query string and url encoded
 REQUEST-DATA: an alist, automatically formatted and urlencoded, sent over stdin
 REQUEST-HEADERS: an alist of header name to value pairs"
-  (let* ((data (when request-data
-                 (if (listp request-data)
-                     (grapnel-format-params request-data)
-                   request-data)))
-         (command (grapnel-command url request-method url-params data
-                                   request-headers))
-         (buffer-name (generate-new-buffer-name " grapnel"))
-         (proc (start-process-shell-command
-                "grapnel" buffer-name command)))
-    (set-process-sentinel proc (apply-partially 'grapnel-sentinel
-                                                handler-alist buffer-name))
-    (when request-data
-      (process-send-string proc data)
-      (process-send-string proc "\n")
-      (process-send-eof proc))
-    nil))
+  (grapnel-request (grapnel-make-request-alist url handler-alist nil
+                                               request-method url-params
+                                               request-data request-headers)))
 
 ;;;###autoload
 (defun grapnel-retrieve-url-sync (url handler-alist &optional
                                       request-method url-params
                                       request-data request-headers)
-  "Behaves the same as `grapnel-retrieve-url' but synchronously."
-  (let* ((data (when request-data
-                 (if (listp request-data)
-                     (grapnel-format-params request-data)
-                   request-data)))
-         (command (grapnel-command url request-method url-params
-                                   data request-headers))
-         (buffer-name (generate-new-buffer-name " grapnel"))
-         (tmp-file (format "/tmp/grapnel%s.tmp" (random t))))
-    (unwind-protect
-        (progn
-          (with-temp-file tmp-file
-            (when data
-              (insert data)))
-          (let ((exit-code (call-process-shell-command command tmp-file
-                                                       buffer-name nil)))
-            (with-current-buffer buffer-name
-              (let* ((headers (grapnel-parse-headers
-                               (grapnel-response-headers)))
-                     (response (buffer-string))
-                     (ret (funcall grapnel-callback-dispatch-fn
-                                   handler-alist exit-code response headers)))
-                (kill-buffer buffer-name)
-                ret))))
-      (condition-case err
-          (delete-file tmp-file)
-        (error nil)))))
+  "Behaves the same as `grapnel-retrieve-url' but busy waits for the
+underlying curl process to finish."
+  (grapnel-log "grapnel-retrieve-url-sync" url handler-alist request-method
+               url-params request-data request-headers)
+  (grapnel-request (grapnel-make-request-alist url handler-alist t
+                                               request-method url-params
+                                               request-data request-headers)))
+
+;;;###autoload
+(defun grapnel-get (url opts-alist)
+  "Simple HTTP GET call.  OPTS-ALIST can contain any of the keys found
+in `grapnel-default-request-alist' to override those defaults."
+  (grapnel-request
+   (a-merge grapnel-default-request-alist
+            opts-alist
+            `((url . ,url)
+              (method . "GET")))))
+
+;;;###autoload
+(defun grapnel-post (url opts-alist)
+  "Simple HTTP POST call.  OPTS-ALIST can contain any of the keys found
+in `grapnel-default-request-alist' to override those defaults."
+  (grapnel-request
+   (a-merge grapnel-default-request-alist
+            opts-alist
+            `((url . ,url)
+              (method . "POST")))))
 
 (provide 'grapnel)
 

@@ -21,30 +21,25 @@
 
 (ert-deftest grapnel-test-command ()
   (let ((grapnel-program "curl"))
-    (should (equal (concat "curl --include --silent --request GET"
-                           " http\\://www.google.com")
+    (should (equal "curl --include --silent http\\://www.google.com"
                    (grapnel-command "http://www.google.com")))
-    (should (equal (concat "curl --header Content-Length\\:\\ 0 --include"
+    (should (equal (concat "curl --include"
                            " --silent --request POST http\\://www.google.com")
                    (grapnel-command "http://www.google.com" "POST")))
-    (should (equal (concat "curl --header Content-Length\\:\\ 0 --include"
-                           " --silent --request POST"
-                           " http\\://www.google.com\\?q\\=serenity")
-                   (grapnel-command "http://www.google.com" "POST"
-                                    '(("q" . "serenity")))))
-    (should (equal (concat "curl --header Content-Length\\:\\ 1 --include"
+    (should (equal (concat "curl --include"
                            " --silent --request POST --data @-"
-                           " http\\://www.google.com\\?q\\=serenity")
+                           " http\\://www.google.com")
                    (grapnel-command "http://www.google.com" "POST"
-                                    '(("q" . "serenity"))
+                                    nil
                                     '(("doesn't" . "matter")))))
-    (should (equal (concat "curl --header Content-Length\\:\\ 1"
+    (should (equal (concat "curl"
                            " --header header\\:\\ value --include --silent"
                            " --request POST --data @-"
-                           " http\\://www.google.com\\?q\\=serenity")
-                   (grapnel-command "http://www.google.com" "POST"
-                                    '(("q" . "serenity"))
-                                    '(("doesn't" . "matter"))
+                           " http\\://www.google.com")
+                   (grapnel-command "http://www.google.com"
+                                    "POST"
+                                    nil
+                                    "doesn't matter"
                                     '(("header" . "value")))))))
 
 (ert-deftest grapnel-test-parse-headers ()
@@ -75,30 +70,38 @@
       (should (equal headers (grapnel-response-headers))))))
 
 (ert-deftest grapnel-test-callback-dispatch ()
-  (let ((dispatch '((201 . (lambda (_ _) "201"))
-                    (success . (lambda (_ _) "success"))
-                    (failure . (lambda (_ _) "failure"))
-                    (complete . (lambda (_ _) "complete"))
-                    (error . (lambda (_ _) "error"))))
-        (complete '((201 . (lambda (_ _) 201))
-                    (complete . (lambda (_ _) "complete"))
-                    (error . (lambda (_ _) "error")))))
+  (let ((response-alist
+         '((handlers . ((201 . (lambda (_ _) "201"))
+                        (success . (lambda (_ _) "success"))
+                        (failure . (lambda (_ _) "failure"))
+                        (complete . (lambda (_ _) "complete"))
+                        (error . (lambda (_ _) "error"))))
+           (response . ((code . 200)
+                        (process-exit-code . 0)))))
+        (complete-alist
+         '((handlers . ((201 . (lambda (_ _) 201))
+                        (complete . (lambda (_ _) "complete"))
+                        (error . (lambda (_ _) "error"))))
+           (response . ((code . 200)
+                        (process-exit-code . 0))))))
     (should (equal "success"
-                   (grapnel-callback-dispatch dispatch 0 1
-                                              '(("response-code" 200)))))
+                   (grapnel-callback-dispatch
+                    (a-put-in response-alist '(response code) 200))))
     (should (equal "201"
-                   (grapnel-callback-dispatch dispatch 0 1
-                                              '(("response-code" 201)))))
+                   (grapnel-callback-dispatch
+                    (a-put-in response-alist '(response code) 201))))
     (should (equal "failure"
-                   (grapnel-callback-dispatch dispatch 0 1
-                                              '(("response-code" 400)))))
-    (should (equal "error" (grapnel-callback-dispatch dispatch 1 1 nil)))
+                   (grapnel-callback-dispatch
+                    (a-put-in response-alist '(response code) 400))))
+    (should (equal "error" (grapnel-callback-dispatch
+                            (a-put-in response-alist
+                                      '(response process-exit-code) 1))))
     (should (equal "complete"
-                   (grapnel-callback-dispatch complete 0 1
-                                              '(("response-code" 200)))))
+                   (grapnel-callback-dispatch
+                    (a-put-in complete-alist '(response code) 200))))
     (should (equal "complete"
-                   (grapnel-callback-dispatch complete 0 1
-                                              '(("response-code" 400)))))
+                   (grapnel-callback-dispatch
+                    (a-put-in complete-alist '(response code) 400))))
     ;; TODO: figure out how to test that a warning occurs
     ;;(grapnel-callback-dispatch '() 1 1 '())
     ))
@@ -137,35 +140,24 @@
         (error nil)))))
 
 (ert-deftest grapnel-test-headers ()
-  (let ((opera-mini-resp
-         (grapnel-retrieve-url-sync
-          "www.google.com"
-          `((success . (lambda (resp hdrs) resp))
-            (failure . (lambda (&rest args) (error "The request failed"))))
-          "GET"
-          nil
-          nil
-          '(("Accept" . (mapconcat 'identity
-                                   '("application/vnd.wap.wmlc"
-                                     "application/vnd.wap.wmlscriptc"
-                                     "image/vnd.wap.wbmp"
-                                     "application/vnd.wap.wtls-ca-certificate"
-                                     "image/gif"
-                                     "text/plain")
-                                   ", "))
-            ;; this is here just for the embedded quotes
-            ("If-None-Match" "\"abc123\"")
-            ("User-Agent" . "Nokia8310/1.0 (04.53)"))))
-        (firefox-response
-         (grapnel-retrieve-url-sync
-          "www.google.com"
-          `((success . (lambda (resp hdrs) resp))
-            (failure . (lambda (&rest args) (error "The request failed"))))
-          "GET"
-          nil
-          nil
-          '(("User-Agent" . (concat "User-Agent: Mozilla/5.0"
-                                    " (X11; Linux x86_64; rv:12.0)"
-                                    " Gecko/20100101 Firefox/21.0"))))))
-    (should (string-match "WAPFORUM//DTD" opera-mini-resp))
-    (should (> (length firefox-response) (length opera-mini-resp)))))
+  (let* ((user-agent "Nokia8310/1.0 (04.53)")
+         (wap-resp
+          (grapnel-retrieve-url-sync
+           "http://whatsmyuseragent.com/"
+           `((success . (lambda (resp hdrs) resp))
+             (failure . (lambda (&rest args) (error "The request failed"))))
+           "GET"
+           nil
+           nil
+           `(("Accept" . (mapconcat 'identity
+                                    '("application/vnd.wap.wmlc"
+                                      "application/vnd.wap.wmlscriptc"
+                                      "image/vnd.wap.wbmp"
+                                      "application/vnd.wap.wtls-ca-certificate"
+                                      "image/gif"
+                                      "text/plain")
+                                    ", "))
+             ;; this is here just for the embedded quotes
+             ("If-None-Match" "\"abc123\"")
+             ("User-Agent" . ,user-agent)))))
+    (should (string-match user-agent wap-resp))))
