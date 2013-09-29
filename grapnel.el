@@ -78,21 +78,26 @@ would be entered on the command line.")
 
 (defun grapnel-command (url &optional
                             request-method url-params
-                            request-data request-headers)
+                            request-data-file request-headers)
   "Converts the passed arguments into the curl command"
   (let* ((method (or request-method "GET"))
+         (filename (when request-data-file
+                     (expand-file-name request-data-file)))
+         (filesize (if filename
+                       (nth 7 (file-attributes filename))
+                     0))
          (url (if (null url-params)
                   url
                 (concat url
                         (if (string-match-p "\?" url) "&" "?")
                         (grapnel-format-params url-params))))
-         (data (if (null request-data)
-                   ""
-                 " --data @-"))
+         (data (if filename
+                   (format " --data @%s" filename)
+                 ""))
          (headers (if (and (equal "POST" method)
                            (null (cdr (assoc "Content-Length"
                                              request-headers))))
-                      (cons `("Content-Length" . ,(length request-data))
+                      (cons `("Content-Length" . ,filesize)
                             request-headers)
                     request-headers))
          (headers (if (null headers)
@@ -196,16 +201,33 @@ rest of them are called with (response headers)"
                          "Curl exit code: %s, Response code: %s")
                  exit-code response-code)))))
 
-(defun grapnel-sentinel (handler-alist buffer-name process signal)
+(defun grapnel-sentinel (handler-alist buffer-name data-file process signal)
   "Sentinel function that watches the curl process"
-  (when (or (string-match "^finished" signal)
-            (string-match "^exited abnormally" signal))
-    (with-current-buffer buffer-name
-      (let ((headers (grapnel-parse-headers (grapnel-response-headers)))
-            (response (buffer-string)))
-        (funcall grapnel-callback-dispatch-fn
-                 handler-alist (process-exit-status process) response headers))
-      (kill-buffer buffer-name))))
+  (unwind-protect
+      (when (or (string-match "^finished" signal)
+                (string-match "^exited abnormally" signal))
+        (with-current-buffer buffer-name
+          (let ((headers (grapnel-parse-headers (grapnel-response-headers)))
+                (response (buffer-string)))
+            (funcall grapnel-callback-dispatch-fn
+                     handler-alist (process-exit-status process)
+                     response headers))
+          (kill-buffer buffer-name)))
+    (condition-case err
+        (when (and (file-exists-p data-file)
+                   (not (process-live-p process)))
+          (delete-file data-file))
+      (error nil))))
+
+(defun grapnel-prepare-data-file (data)
+  "Create and return a temp file populated with DATA. Return nil if
+there is no data."
+  (when data
+    (let ((data-file (make-temp-file "grapnel" nil "tmp")))
+      (with-temp-file data-file
+        (when data
+          (insert data)))
+      data-file)))
 
 ;;;###autoload
 (defun grapnel-retrieve-url (url handler-alist &optional
@@ -223,18 +245,23 @@ REQUEST-HEADERS: an alist of header name to value pairs"
                  (if (listp request-data)
                      (grapnel-format-params request-data)
                    request-data)))
-         (command (grapnel-command url request-method url-params data
-                                   request-headers))
-         (buffer-name (generate-new-buffer-name " grapnel"))
-         (proc (start-process-shell-command
-                "grapnel" buffer-name command)))
-    (set-process-sentinel proc (apply-partially 'grapnel-sentinel
-                                                handler-alist buffer-name))
-    (when request-data
-      (process-send-string proc data)
-      (process-send-string proc "\n")
-      (process-send-eof proc))
-    nil))
+         (tmp-file (grapnel-prepare-data-file data))
+         (buffer-name (generate-new-buffer-name " grapnel")))
+    (condition-case err
+        (let* ((command (grapnel-command url request-method url-params
+                                         tmp-file
+                                         request-headers))
+               (proc (start-process-shell-command "grapnel"
+                                                  buffer-name
+                                                  command)))
+          (set-process-sentinel proc (apply-partially 'grapnel-sentinel
+                                                      handler-alist
+                                                      buffer-name
+                                                      tmp-file)))
+      (error
+       (when (file-exists-p tmp-file)
+         (delete-file tmp-file)))))
+  nil)
 
 ;;;###autoload
 (defun grapnel-retrieve-url-sync (url handler-alist &optional
@@ -245,17 +272,14 @@ REQUEST-HEADERS: an alist of header name to value pairs"
                  (if (listp request-data)
                      (grapnel-format-params request-data)
                    request-data)))
-         (command (grapnel-command url request-method url-params
-                                   data request-headers))
          (buffer-name (generate-new-buffer-name " grapnel"))
-         (tmp-file (format "/tmp/grapnel%s.tmp" (random t))))
+         (tmp-file (grapnel-prepare-data-file data)))
     (unwind-protect
         (progn
-          (with-temp-file tmp-file
-            (when data
-              (insert data)))
-          (let ((exit-code (call-process-shell-command command tmp-file
-                                                       buffer-name nil)))
+          (let* ((command (grapnel-command url request-method url-params
+                                           tmp-file request-headers))
+                 (exit-code (call-process-shell-command command tmp-file
+                                                        buffer-name nil)))
             (with-current-buffer buffer-name
               (let* ((headers (grapnel-parse-headers
                                (grapnel-response-headers)))
@@ -265,7 +289,8 @@ REQUEST-HEADERS: an alist of header name to value pairs"
                 (kill-buffer buffer-name)
                 ret))))
       (condition-case err
-          (delete-file tmp-file)
+          (when (file-exists-p tmp-file)
+            (delete-file tmp-file))
         (error nil)))))
 
 (provide 'grapnel)
