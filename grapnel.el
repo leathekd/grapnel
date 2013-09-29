@@ -132,6 +132,11 @@ would be entered on the command line.")
     (while (re-search-forward "[\r]" nil t)
       (replace-match "" nil nil))
     (goto-char (point-min))
+    (while (re-search-forward "^HTTP/1.1 100 Continue" nil t)
+      (delete-region (point-at-bol)
+                     ;; delete the following blank line, too
+                     (progn (forward-line 2) (point))))
+    (goto-char (point-min))
     (let ((pos (search-forward-regexp "^$" nil t)))
       (when pos
         (let ((headers (buffer-substring (point-min) pos)))
