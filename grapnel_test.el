@@ -32,20 +32,29 @@
                            " http\\://www.google.com\\?q\\=serenity")
                    (grapnel-command "http://www.google.com" "POST"
                                     '(("q" . "serenity")))))
-    (should (equal (concat "curl --header Content-Length\\:\\ 1 --include"
-                           " --silent --request POST --data @-"
-                           " http\\://www.google.com\\?q\\=serenity")
-                   (grapnel-command "http://www.google.com" "POST"
-                                    '(("q" . "serenity"))
-                                    '(("doesn't" . "matter")))))
-    (should (equal (concat "curl --header Content-Length\\:\\ 1"
-                           " --header header\\:\\ value --include --silent"
-                           " --request POST --data @-"
-                           " http\\://www.google.com\\?q\\=serenity")
-                   (grapnel-command "http://www.google.com" "POST"
-                                    '(("q" . "serenity"))
-                                    '(("doesn't" . "matter"))
-                                    '(("header" . "value")))))))
+    (let* ((data-file (expand-file-name (grapnel-prepare-data-file
+                                         "1"))))
+      (unwind-protect
+          (progn
+            (should (equal
+                     (concat "curl --header Content-Length\\:\\ 1 --include"
+                             " --silent --request POST --data @" data-file
+                             " http\\://www.google.com\\?q\\=serenity")
+                     (grapnel-command "http://www.google.com" "POST"
+                                      '(("q" . "serenity"))
+                                      data-file)))
+            (should (equal
+                     (concat "curl --header Content-Length\\:\\ 1"
+                             " --header header\\:\\ value --include --silent"
+                             " --request POST --data @" data-file
+                             " http\\://www.google.com\\?q\\=serenity")
+                     (grapnel-command "http://www.google.com" "POST"
+                                      '(("q" . "serenity"))
+                                      data-file
+                                      '(("header" . "value"))))))
+        (condition-case err
+            (delete-file data-file)
+          (error nil))))))
 
 (ert-deftest grapnel-test-parse-headers ()
   (let ((headers (concat
@@ -55,6 +64,25 @@
                   "Cache-Control: private, max-age=0\n"
                   "Content-Type: text/html; charset=ISO-8859-1\n")))
     (should (equal (grapnel-parse-headers headers)
+                   '(("response-code" 200)
+                     ("Date" "Sat, 23 Mar 2013 21:49:44 GMT")
+                     ("Expires" "-1")
+                     ("Cache-Control" "private, max-age=0")
+                     ("Content-Type" "text/html; charset=ISO-8859-1"))))))
+
+(ert-deftest grapnel-test-parse-headers-continue ()
+  (with-temp-buffer
+    (insert (concat
+             "HTTP/1.1 100 Continue\n"
+             "\n"
+             "HTTP/1.1 200 OK\n"
+             "Date: Sat, 23 Mar 2013 21:49:44 GMT\n"
+             "Expires: -1\n"
+             "Cache-Control: private, max-age=0\n"
+             "Content-Type: text/html; charset=ISO-8859-1\n"
+             "\n"))
+    (goto-char (point-min))
+    (should (equal (grapnel-parse-headers (grapnel-response-headers))
                    '(("response-code" 200)
                      ("Date" "Sat, 23 Mar 2013 21:49:44 GMT")
                      ("Expires" "-1")
@@ -156,16 +184,11 @@
             ;; this is here just for the embedded quotes
             ("If-None-Match" "\"abc123\"")
             ("User-Agent" . "Nokia8310/1.0 (04.53)"))))
-        (firefox-response
+        (response
          (grapnel-retrieve-url-sync
           "www.google.com"
           `((success . (lambda (resp hdrs) resp))
             (failure . (lambda (&rest args) (error "The request failed"))))
-          "GET"
-          nil
-          nil
-          '(("User-Agent" . (concat "User-Agent: Mozilla/5.0"
-                                    " (X11; Linux x86_64; rv:12.0)"
-                                    " Gecko/20100101 Firefox/21.0"))))))
+          "GET")))
     (should (string-match "WAPFORUM//DTD" opera-mini-resp))
-    (should (> (length firefox-response) (length opera-mini-resp)))))
+    (should (> (length response) (length opera-mini-resp)))))
