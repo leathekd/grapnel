@@ -1,3 +1,9 @@
+*NO LONGER DEVELOPED* Probably apparent from the commit log, but this 
+is no longer developed.  Check out the [[https://github.com/tkf/emacs-request][request]]
+library for a great alternative.  It features a similar callback 
+dispatch that I was aiming for when I originally wrote grapnel.  
+Good luck!
+
 * grapnel
 A HTTP request lib for Emacs with flexible callback dispatch.
 
